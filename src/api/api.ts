@@ -2,7 +2,7 @@ import axios from 'axios';
 import type { DayRecord } from '../utils/storage';
 
 const API_URL = `${process.env.REACT_APP_API_URL || ''}`;
-const API_KEY = `${process.env.REACT_APP_API_KEY || ''}`;
+const API_KEY = `${process.env.REACT_APP_API_KEY || ''}`; // не обязателен — добавится только если задан
 
 function buildEndpoints() {
   if (!API_URL) throw new Error('REACT_APP_API_URL не задан в .env');
@@ -11,11 +11,11 @@ function buildEndpoints() {
     const u = new URL(API_URL);
     origin = u.origin; // https://api.lumastack.ru
   } catch {
-    // если вдруг пришёл относительный путь — работаем с текущим origin
+    // если пришёл относительный путь — берём текущий origin
     origin = window.location.origin;
   }
-  const primary = `${origin}/api/routes`; // новый express-эндпоинт
-  const fallback = `${origin}/api/save/routes.json`; // старый путь (PUT целиком в файл)
+  const primary = `${origin}/api/routes`;           // новый express-эндпоинт (POST upsert)
+  const fallback = `${origin}/api/save/routes.json`; // совместимость: PUT целиком в файл
   return { primary, fallback };
 }
 
@@ -26,20 +26,41 @@ export async function sendDay(rec: DayRecord) {
     stops: rec.stops,
     distanceKm: rec.distanceKm ?? null,
   };
-  const headers: any = { 'Content-Type': 'application/json' };
-  if (API_KEY) headers['x-api-key'] = API_KEY;
 
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (API_KEY) headers['x-api-key'] = API_KEY; // добавим только если есть
+
+  // 1) Пытаемся основной эндпоинт
   try {
-    // Пытаемся новый API: POST /api/routes (upsert)
-    const res = await axios.post(primary, payload, { headers });
+    const res = await axios.post(primary, payload, { headers, timeout: 12000 });
     return res.data;
   } catch (e: any) {
-    const status = e?.response?.status;
-    // Если эндпоинт не найден — пытаемся совместимостью: PUT /api/save/routes.json
-    if (status === 404) {
-      const res2 = await axios.put(fallback, { days: { [rec.date]: payload } }, { headers });
-      return res2.data;
+    const statusNum: number = typeof e?.response?.status === 'number' ? e.response.status : 0; // 0 — network error/таймаут/CORS
+
+    // Лог в консоль для диагностики
+    console.error('[sendDay] primary failed', { url: primary, status: statusNum, message: e?.message, data: e?.response?.data });
+
+    // 2) Решение: используем fallback при большинстве инфраструктурных ошибок:
+    // 404/405 — маршрут не найден/метод не поддерживается
+    // 5xx — сервер недоступен или падает за прокси
+    // 0   — network error/таймаут/CORS (браузер не дал статус)
+    const shouldFallback = [0, 404, 405, 500, 501, 502, 503, 504].includes(statusNum);
+
+    // Не делаем fallback только при 401/403 (ошибка авторизации) — их важно показать пользователю
+    if (!shouldFallback || statusNum === 401 || statusNum === 403) {
+      throw e;
     }
-    throw e;
+
+    try {
+      const res2 = await axios.put(
+        fallback,
+        { days: { [rec.date]: payload } },
+        { headers, timeout: 12000 }
+      );
+      return res2.data;
+    } catch (e2: any) {
+      console.error('[sendDay] fallback failed', { url: fallback, status: e2?.response?.status ?? 0, message: e2?.message, data: e2?.response?.data });
+      throw e2; // отдадим дальше — пусть UI поставит в очередь
+    }
   }
 }
