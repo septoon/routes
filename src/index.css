@@ -1,0 +1,58 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root { height: 100%; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; @apply bg-white text-black dark:bg-black dark:text-white; }
+
+/* iOS-like card */
+.card { @apply rounded-3xl p-4 shadow-md bg-white/70 dark:bg-white/5 backdrop-blur border border-black/5 dark:border-white/10; }
+.input { @apply w-full bg-transparent outline-none px-3 py-2 rounded-xl border border-black/10 dark:border-white/20; }
+.btn { @apply inline-flex items-center justify-center rounded-md px-4 py-3 font-medium shadow-sm border border-black/10 dark:border-white/20 active:scale-[0.985] transition-transform; }
+.btn-primary { @apply bg-primary text-white; }
+.btn-tonal { @apply bg-white/70 dark:bg-white/10; }
+
+/* Mobile-first layout */
+#root { display: flex; justify-content: center; }
+.app-container { width: 100%; max-width: 430px; margin: 0 auto; padding: 8px; }
+
+/* Compact UI */
+.card { @apply rounded-2xl p-3 shadow bg-white/70 dark:bg-white/5 backdrop-blur border border-black/5 dark:border-white/10; }
+.btn { @apply inline-flex items-center justify-center rounded-md px-3 py-2 text-sm font-medium shadow-sm border border-black/10 dark:border-white/20 active:scale-[0.99] transition-transform; }
+.btn-tonal { @apply bg-white/70 dark:bg-white/10; }
+.input { @apply w-full rounded-xl px-3 py-2 bg-white/10 dark:bg-white/5 border border-black/10 dark:border-white/20; }
+.navbar { @apply sticky top-0 z-10 bg-black/0 backdrop-blur pb-2; }
+label { @apply text-[13px]; }
+.text-xs { font-size: 12px; }
+.text-sm { font-size: 14px; }
+.text-base { font-size: 16px; }
+.text-lg { font-size: 18px; }
+.text-xl { font-size: 20px; }
+.text-2xl { font-size: 22px; }
+
+/* Badges */
+.badge { @apply text-[11px] px-2 py-0.5 rounded-full border; }
+
+/* Reduce chips */
+.chip { @apply px-2 py-1 rounded-full text-xs border; }
+
+/* Spinner size smaller */
+.spinner { width: 0.9rem; height: 0.9rem; }
+
+/* iOS-like buttons */
+.btn { @apply inline-flex items-center justify-center rounded-md px-3 py-2 text-sm font-medium shadow-sm border border-black/10 dark:border-white/20 active:scale-95 transition-all; }
+.btn-primary { @apply bg-blue-500 text-white border-transparent; }
+.btn-tonal { @apply bg-white/80 dark:bg-white/10; }
+
+/* --- iOS-like minimal buttons (final override) --- */
+.btn { @apply inline-flex items-center justify-center rounded-md px-3 py-2 text-sm font-medium border border-black/10 dark:border-white/15 bg-white/80 dark:bg-white/10 active:scale-95 transition-all; }
+.btn-primary { @apply bg-blue-500 text-white border-transparent; }
+.btn-tonal { @apply bg-white/70 dark:bg-white/10; }
+.btn-delete { @apply bg-red-500 text-white border-transparent; }
+.btn-add { @apply bg-green-500 text-white border-transparent; }
+
+/* Mobile tweaks for export table */
+@media (max-width: 640px) {
+  table th, table td { @apply px-2 py-2 text-xs; }
+  .btn { @apply text-xs px-2 py-2; }
+}
