@@ -118,7 +118,7 @@ export default function HomePage() {
   };
 
   return (
-    <div className="space-y-3 pb-20">
+    <div className="space-y-3 pt-10 pb-24">
       
       <div className="flex items-center justify-between">
         <div>

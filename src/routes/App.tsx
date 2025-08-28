@@ -17,7 +17,7 @@ export default function App() {
         </Routes>
       </main>
 
-      <nav className="fixed bottom-2 left-2 right-2 h-16 rounded-3xl flex justify-around items-center backdrop-blur-md bg-white/70 dark:bg-black/30 border-t border-black/10 dark:border-white/10 safe-area-inset-bottom">
+      <nav className="fixed bottom-3 left-3 right-3 h-16 rounded-3xl flex justify-around items-center backdrop-blur-md bg-white/70 dark:bg-black/30 border-t border-black/10 dark:border-white/10 safe-area-inset-bottom">
         <Link
           to="/home"
           className="flex flex-col items-center text-sm font-medium"

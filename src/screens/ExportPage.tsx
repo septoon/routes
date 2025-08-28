@@ -108,7 +108,7 @@ export default function ExportPage() {
   };
 
   return (
-    <div className="space-y-3 pb-20">
+    <div className="space-y-3 pt-10 pb-24">
       <div className="text-xl font-semibold">Экспорт</div>
       <div className="card grid gap-3">
         <div className="grid grid-cols-2 gap-3">

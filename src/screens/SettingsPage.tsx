@@ -25,7 +25,7 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="space-y-3 pb-20">
+    <div className="space-y-3 pt-10 pb-24">
       <div className="text-xl font-semibold">Настройки</div>
 
       <div className="card grid gap-3">
