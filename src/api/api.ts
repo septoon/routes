@@ -1,66 +1,118 @@
 import axios from 'axios';
 import type { DayRecord } from '../utils/storage';
 
-const API_URL = `${process.env.REACT_APP_API_URL || ''}`;
-const API_KEY = `${process.env.REACT_APP_API_KEY || ''}`; // не обязателен — добавится только если задан
+const RAW_API = `${process.env.REACT_APP_API_URL || ''}`.trim();
+const DEFAULT_API_ORIGIN = 'https://api.lumastack.ru';
+const API_KEY = `${process.env.REACT_APP_API_KEY || ''}`.trim();
 
-function buildEndpoints() {
-  if (!API_URL) throw new Error('REACT_APP_API_URL не задан в .env');
-  let origin = '';
+function onlyOrigin(u: string): string | null {
+  if (!u) return null;
   try {
-    const u = new URL(API_URL);
-    origin = u.origin; // https://api.lumastack.ru
+    const url = new URL(u);
+    return url.origin;
   } catch {
-    // если пришёл относительный путь — берём текущий origin
-    origin = window.location.origin;
+    return null;
   }
-  const primary = `${origin}/api/routes`;           // новый express-эндпоинт (POST upsert)
-  const fallback = `${origin}/api/save/routes.json`; // совместимость: PUT целиком в файл
-  return { primary, fallback };
+}
+
+function resolveApiOrigin(): string {
+  // 1) origin из переменной окружения (если в ней был путь — он будет отброшен)
+  const envOrigin = onlyOrigin(RAW_API);
+  if (envOrigin) return envOrigin;
+
+  // 2) origin текущего приложения
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return window.location.origin;
+  }
+
+  // 3) запасной вариант
+  return DEFAULT_API_ORIGIN;
+}
+
+type Candidate = {
+  method: 'post' | 'put';
+  url: string;
+  data: any;
+  headers: Record<string, string>;
+  label: string; // для логов
+};
+
+function buildCandidates(date: string, payload: any): Candidate[] {
+  const origin = resolveApiOrigin();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (API_KEY) headers['x-api-key'] = API_KEY;
+
+  const primaryPost: Candidate = { method: 'post', url: `${origin}/api/routes`, data: payload, headers, label: 'primary POST /api/routes' };
+  const primaryPut: Candidate  = { method: 'put',  url: `${origin}/api/routes`, data: payload, headers, label: 'primary PUT /api/routes' };
+  const primarySlash: Candidate = { method: 'post', url: `${origin}/api/routes/`, data: payload, headers, label: 'primary POST /api/routes/ (slash)' };
+
+  // Файловый fallback (совместим с nginx location ~ ^/([a-zA-Z0-9_-]+\.json)$ и Express /api/save/:fileName)
+  const filePutApi: Candidate    = { method: 'put', url: `${origin}/api/save/routes.json`, data: { days: { [date]: payload } }, headers, label: 'fallback PUT /api/save/routes.json (Express)' };
+  const fileDirectNginx: Candidate = { method: 'put', url: `${origin}/routes.json`, data: { days: { [date]: payload } }, headers, label: 'fallback PUT /routes.json (nginx direct)' };
+
+  // Жёсткий origin на случай, если RAW_API пуст/битый
+  const hard = DEFAULT_API_ORIGIN;
+  const hardPost: Candidate   = { method: 'post', url: `${hard}/api/routes`, data: payload, headers, label: 'HARD POST /api/routes' };
+  const hardPut: Candidate    = { method: 'put',  url: `${hard}/api/routes`, data: payload, headers, label: 'HARD PUT /api/routes' };
+  const hardFilePut: Candidate = { method: 'put', url: `${hard}/api/save/routes.json`, data: { days: { [date]: payload } }, headers, label: 'HARD PUT /api/save/routes.json' };
+
+  return [
+    primaryPost,
+    primaryPut,
+    primarySlash,
+    filePutApi,
+    fileDirectNginx,
+    hardPost,
+    hardPut,
+    hardFilePut,
+  ];
 }
 
 export async function sendDay(rec: DayRecord) {
-  const { primary, fallback } = buildEndpoints();
   const payload = {
     date: rec.date,
     stops: rec.stops,
-    distanceKm: rec.distanceKm ?? null,
+    distanceKm: typeof rec.distanceKm === 'number' ? rec.distanceKm : 0,
+    sent: !!rec.sent,
   };
 
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (API_KEY) headers['x-api-key'] = API_KEY; // добавим только если есть
+  const candidates = buildCandidates(rec.date, payload);
+  let lastErr: any = null;
 
-  // 1) Пытаемся основной эндпоинт
+  // Диагностика: покажем какие урлы будем пробовать
   try {
-    const res = await axios.post(primary, payload, { headers, timeout: 12000 });
-    return res.data;
-  } catch (e: any) {
-    const statusNum: number = typeof e?.response?.status === 'number' ? e.response.status : 0; // 0 — network error/таймаут/CORS
+    console.debug('[sendDay] origin=', resolveApiOrigin(), 'RAW_API=', RAW_API);
+    console.debug('[sendDay] candidates in order:', candidates.map(c => `${c.label} -> ${c.url}`));
+  } catch {}
 
-    // Лог в консоль для диагностики
-    console.error('[sendDay] primary failed', { url: primary, status: statusNum, message: e?.message, data: e?.response?.data });
-
-    // 2) Решение: используем fallback при большинстве инфраструктурных ошибок:
-    // 404/405 — маршрут не найден/метод не поддерживается
-    // 5xx — сервер недоступен или падает за прокси
-    // 0   — network error/таймаут/CORS (браузер не дал статус)
-    const shouldFallback = [0, 404, 405, 500, 501, 502, 503, 504].includes(statusNum);
-
-    // Не делаем fallback только при 401/403 (ошибка авторизации) — их важно показать пользователю
-    if (!shouldFallback || statusNum === 401 || statusNum === 403) {
-      throw e;
-    }
-
+  for (const cfg of candidates) {
     try {
-      const res2 = await axios.put(
-        fallback,
-        { days: { [rec.date]: payload } },
-        { headers, timeout: 12000 }
-      );
-      return res2.data;
-    } catch (e2: any) {
-      console.error('[sendDay] fallback failed', { url: fallback, status: e2?.response?.status ?? 0, message: e2?.message, data: e2?.response?.data });
-      throw e2; // отдадим дальше — пусть UI поставит в очередь
+      const res = await axios.request({
+        method: cfg.method,
+        url: cfg.url,
+        data: cfg.data,
+        headers: cfg.headers,
+        timeout: 15000,
+        withCredentials: false,
+        // 2xx и 204 считаем успехом
+        validateStatus: (s) => (s >= 200 && s < 300) || s === 204,
+      });
+      console.info('[sendDay] OK:', cfg.label, '->', cfg.url, 'status', res.status);
+      return res.data ?? { success: true };
+    } catch (e: any) {
+      lastErr = e;
+      const status: number = typeof e?.response?.status === 'number' ? e.response.status : 0;
+      const msg = (e?.response?.data && (e.response.data.error || e.response.data.message)) || e?.message || '';
+      console.warn('[sendDay] FAIL:', cfg.label, '->', cfg.url, `HTTP ${status}`, msg);
+
+      // Если это ошибка авторизации — не пробуем дальше, чтобы пользователь увидел настоящий 401/403
+      if (status === 401 || status === 403) {
+        throw e;
+      }
+      // иначе продолжаем к следующему кандидату
     }
   }
+
+  // Если дошли сюда — никто не ответил
+  throw lastErr || new Error('Не удалось отправить данные: все кандидаты не ответили.');
 }

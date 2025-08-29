@@ -6,14 +6,46 @@ import * as XLSX from 'xlsx';
 function toYMD(d: Date) { return format(d, 'yyyy-MM-dd'); }
 
 const API_URL = process.env.REACT_APP_API_URL || '';
-function getReadUrl() {
+
+function getCandidates(): string[] {
+  const list: string[] = [];
   try {
     const u = new URL(API_URL);
-    return `${u.origin}/api/data/routes.json`;
+    const origin = u.origin;
+    list.push(`${origin}/api/data/routes.json`); // Express file API
+    list.push(`${origin}/routes.json`);          // NGINX direct file
   } catch {
-    // Fallback: assume same origin
-    return '/api/data/routes.json';
+    // API_URL может быть пуст или относительный — используем текущий origin
+    const origin = window.location.origin;
+    list.push(`${origin}/api/data/routes.json`);
+    list.push(`${origin}/routes.json`);
   }
+  // как последний шанс — относительные пути (полезно на GH Pages)
+  list.push('/api/data/routes.json');
+  list.push('/routes.json');
+  return Array.from(new Set(list));
+}
+
+async function fetchRoutesJSON(): Promise<any> {
+  const candidates = getCandidates();
+  let lastErr: any = null;
+  for (const url of candidates) {
+    try {
+      const res = await axios.get(url, {
+        headers: { 'Accept': 'application/json' },
+        timeout: 12000,
+        withCredentials: false,
+        // не шлём кастомные заголовки, чтобы не триггерить CORS preflight
+      });
+      console.info('[export] Loaded from', url);
+      return res.data;
+    } catch (e: any) {
+      lastErr = e;
+      console.warn('[export] Failed', url, e?.message || e);
+      // пробуем следующий URL
+    }
+  }
+  throw lastErr || new Error('Не удалось загрузить routes.json ни по одному из URL');
 }
 
 export default function ExportPage() {
@@ -29,10 +61,9 @@ export default function ExportPage() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true); setError(null);
-    axios.get(getReadUrl(), { headers: { 'Accept': 'application/json' } })
-      .then(res => {
+    fetchRoutesJSON()
+      .then((data) => {
         if (cancelled) return;
-        const data = res.data;
         let days: Record<string, any> = {};
         if (data && typeof data === 'object') {
           if (Array.isArray(data)) {
@@ -47,9 +78,11 @@ export default function ExportPage() {
         }
         setServerDays(days || {});
       })
-      .catch(err => {
+      .catch((err: any) => {
         if (cancelled) return;
-        setError(err?.message || 'Не удалось получить данные с сервера');
+        const status = err?.response?.status;
+        const msg = status ? `HTTP ${status}` : (err?.message || 'Не удалось получить данные с сервера');
+        setError(msg);
         setServerDays({});
       })
       .finally(() => { if (!cancelled) setLoading(false); });

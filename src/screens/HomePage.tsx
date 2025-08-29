@@ -11,6 +11,24 @@ import { loadAll } from '../utils/storage';
 import { enqueue } from '../utils/queue';
 import { getRegistration } from '../serviceWorkerRegistration';
 
+function normalizeForSend(r: any) {
+  const clean = (v: any) => (typeof v === 'string' ? v.trim() : v ?? '');
+  return {
+    date: r.date,
+    distanceKm: typeof r.distanceKm === 'number' ? r.distanceKm : 0,
+    sent: !!r.sent,
+    stops: (r.stops || []).map((s: any) => ({
+      id: s.id,
+      address: clean(s.address),
+      org: clean(s.org),
+      tid: clean(s.tid),
+      reason: clean(s.reason),
+      status: clean(s.status) || 'В процессе',
+      rejectReason: clean(s.rejectReason || ''),
+    })),
+  };
+}
+
 export default function HomePage() {
   const [selected, setSelected] = useState<Date>(new Date());
   const dateKey = useMemo(() => ymd(selected), [selected]);
@@ -18,6 +36,7 @@ export default function HomePage() {
   const [orgOptions, setOrgOptions] = useState<string[]>([]);
   const [tidOptions, setTidOptions] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [sending, setSending] = useState(false);
 
   // Suggestions from history
   useEffect(() => {
@@ -62,28 +81,37 @@ export default function HomePage() {
 
   const handleSend = async () => {
     if (!window.confirm('Вы уверены, что хотите отправить отчёт?')) return;
+    setSending(true);
     try {
-      await sendDay(rec);
+      const payload = normalizeForSend(rec);
+      await sendDay(payload as any);
       setRec({ ...rec, sent: true });
       alert('Отправлено!');
     } catch (e: any) {
-      // лог в консоль для диагностики
       console.error('sendDay failed', e?.response?.status, e?.response?.data || e?.message);
-      // если явная ошибка авторизации/эндпоинта — покажем статус
-      const status = e?.response?.status;
+      const status: number = typeof e?.response?.status === 'number' ? e.response.status : 0;
+      const msg = (e?.response?.data && (e.response.data.error || e.response.data.message)) || e?.message || '';
+
       if (status === 401 || status === 403) {
-        alert('Сервер отклонил запрос (Unauthorized). Проверь API ключ на сервере и в .env(REACT_APP_API_KEY).');
+        alert('Сервер отклонил запрос (Unauthorized). Проверь API на сервере. В .env клиента ключ не обязателен.');
         return;
       }
       if (status === 404) {
-        alert('Эндпоинт не найден (404). Проверь, что на api.lumastack.ru доступен /api/routes.');
+        alert('Эндпоинт не найден (404). Проверь, что на api.lumastack.ru доступен /api/routes (Express) или /api/save/routes.json (fallback).');
         return;
       }
-      // иначе — ставим в очередь и просим SW отправить позже
-      enqueue(rec.date);
-      const r = await getRegistration();
-      try { await (r as any)?.sync?.register('send-queued-days'); } catch {}
-      alert('Сети нет или сервер недоступен. Заявка поставлена в очередь и будет отправлена автоматически.');
+
+      // Только при инфраструктурных проблемах ставим в очередь
+      if ([0, 502, 503, 504].includes(status)) {
+        enqueue(rec.date);
+        const r = await getRegistration();
+        try { await (r as any)?.sync?.register('send-queued-days'); } catch {}
+        alert('Сети нет или сервер недоступен. Заявка поставлена в очередь и будет отправлена автоматически.');
+      } else {
+        alert(`Не удалось отправить: HTTP ${status}${msg ? ` — ${msg}` : ''}`);
+      }
+    } finally {
+      setSending(false);
     }
   };
 
@@ -174,7 +202,9 @@ export default function HomePage() {
 
 <div className="flex gap-2 mt-2">
   <button className="btn btn-tonal" onClick={handleComputeDistance} disabled={busy}>{busy ? 'Считаю...' : 'Рассчитать дистанцию'}</button>
-  <button className="btn btn-primary w-full font-bold ml-auto" onClick={handleSend}>Отправить</button>
+  <button className="btn btn-primary w-full font-bold ml-auto" onClick={handleSend} disabled={sending}>
+    {sending ? 'Отправляю…' : 'Отправить'}
+  </button>
 </div>
 
 <datalist id="org-list">
