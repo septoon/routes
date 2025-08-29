@@ -144,14 +144,24 @@ export default function ExportPage() {
     <div className="space-y-3 pt-10 pb-24">
       <div className="text-xl font-semibold">Экспорт</div>
       <div className="card grid gap-3">
-        <div className="grid grid-cols-2 gap-3">
+        <div className="date-grid grid grid-cols-2 gap-3 items-stretch">
           <div>
             <div className="text-sm opacity-70 mb-1">С даты</div>
-            <input type="date" className="input" value={toYMD(from)} onChange={e => setFrom(new Date(e.target.value))} />
+            <input
+              type="date"
+              className="input date-ios w-full"
+              value={toYMD(from)}
+              onChange={(e) => setFrom(new Date(e.target.value))}
+            />
           </div>
           <div>
             <div className="text-sm opacity-70 mb-1">По дату</div>
-            <input type="date" className="input" value={toYMD(to)} onChange={e => setTo(new Date(e.target.value))} />
+            <input
+              type="date"
+              className="input date-ios w-full"
+              value={toYMD(to)}
+              onChange={(e) => setTo(new Date(e.target.value))}
+            />
           </div>
         </div>
         <div className="flex items-center justify-between gap-2 flex-wrap">

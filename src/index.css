@@ -56,3 +56,38 @@ label { @apply text-[13px]; }
   table th, table td { @apply px-2 py-2 text-xs; }
   .btn { @apply text-xs px-2 py-2; }
 }
+
+
+/* чтобы элементы сетки могли сжиматься на iOS */
+.date-grid > * { min-width: 0; }
+
+/* Нормализация iOS date input */
+.input[type="date"] {
+  width: 100%;
+  -webkit-appearance: none;
+  appearance: none;
+  font: inherit;
+  line-height: 1.2;
+  white-space: nowrap;       /* не переносить “1 авг. 2025 г.” */
+  padding-right: 2.25rem;    /* место под пикер */
+}
+
+/* компактнее внутренняя разметка Safari */
+.input[type="date"]::-webkit-datetime-edit {
+  padding: 0;
+}
+.input[type="date"]::-webkit-date-and-time-value {
+  min-height: 1.2em;
+}
+
+/* кнопка календаря — прижать вправо и не перекрывать текст */
+.input[type="date"]::-webkit-calendar-picker-indicator {
+  position: absolute;
+  right: .5rem;
+  opacity: .8;
+}
+
+/* Чтобы absolute-индикатор располагался внутри поля */
+.input.date-ios {
+  position: relative;
+}
