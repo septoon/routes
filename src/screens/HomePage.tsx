@@ -160,8 +160,8 @@ export default function HomePage() {
         </div>
         <div className="flex items-center gap-2">
           <CalendarPicker selected={selected} onSelect={setSelected} />
-          <button className="btn btn-tonal text-sm" onClick={handleApplyDefaults} title="Применить старт/финиш из настроек">Обновить офисы</button>
-        </div>
+          <button className="btn btn-tonal" onClick={handleComputeDistance} disabled={busy}>{busy ? 'Считаю...' : 'Рассчитать дистанцию'}</button>
+          </div>
       </div>
 
       <div className="mt-2">
@@ -205,8 +205,8 @@ export default function HomePage() {
 </div>
 
 <div className="flex gap-2 mt-2">
-  <button className="btn btn-tonal" onClick={handleComputeDistance} disabled={busy}>{busy ? 'Считаю...' : 'Рассчитать дистанцию'}</button>
-  <button className="btn btn-primary w-full font-bold ml-auto" onClick={handleSend} disabled={sending}>
+  <button className="btn btn-tonal text-sm" onClick={handleApplyDefaults} title="Применить старт/финиш из настроек">Обновить офисы</button>
+    <button className="btn btn-primary w-full font-bold ml-auto" onClick={handleSend} disabled={sending}>
     {sending ? 'Отправляю…' : 'Отправить'}
   </button>
 </div>
