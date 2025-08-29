@@ -11,12 +11,12 @@ const DEFAULTS: Settings = {
   startAddress: 'Алушта, ул. Снежковой 17Б',
   endAddress: 'Алушта, ул. Снежковой 17Б',
   reasonTemplates: [
-    { label: 'Плановое ТО', color: '#4ade80' },
-    { label: 'Не печатает чек', color: '#f97316' },
-    { label: 'Смена ФН', color: '#f43f5e' },
+    { label: 'Сервисная', color: '#4ade80' },
+    { label: '(добавление канала WIFI)', color: '#f97316' },
+    { label: '(добавление канала Ethernet)', color: '#f59e0b' },
+    { label: 'Установка', color: '#f43f5e' },
     { label: 'Обновление ПО', color: '#60a5fa' },
     { label: 'Замена терминала', color: '#a78bfa' },
-    { label: 'Сбой связи', color: '#f59e0b' },
   ],
 };
 

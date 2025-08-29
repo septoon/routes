@@ -11,10 +11,10 @@ import { loadAll } from '../utils/storage';
 import { enqueue } from '../utils/queue';
 import { getRegistration } from '../serviceWorkerRegistration';
 
-function normalizeForSend(r: any) {
+function normalizeForSend(r: any, date: string) {
   const clean = (v: any) => (typeof v === 'string' ? v.trim() : v ?? '');
   return {
-    date: r.date,
+    date, // всегда отправляем выбранную дату, а не то, что случайно лежит в записи
     distanceKm: typeof r.distanceKm === 'number' ? r.distanceKm : 0,
     sent: !!r.sent,
     stops: (r.stops || []).map((s: any) => ({
@@ -23,7 +23,7 @@ function normalizeForSend(r: any) {
       org: clean(s.org),
       tid: clean(s.tid),
       reason: clean(s.reason),
-      status: clean(s.status) || 'В процессе',
+      status: clean(s.status) || 'Выполнена',
       rejectReason: clean(s.rejectReason || ''),
     })),
   };
@@ -83,7 +83,7 @@ export default function HomePage() {
     if (!window.confirm('Вы уверены, что хотите отправить отчёт?')) return;
     setSending(true);
     try {
-      const payload = normalizeForSend(rec);
+      const payload = normalizeForSend(rec, dateKey);
       await sendDay(payload as any);
       setRec({ ...rec, sent: true });
       alert('Отправлено!');
@@ -97,7 +97,7 @@ export default function HomePage() {
         return;
       }
       if (status === 404) {
-        alert('Эндпоинт не найден (404). Проверь, что на api.lumastack.ru доступен /api/routes (Express) или /api/save/routes.json (fallback).');
+        alert('Эндпоинт не найден (404). Проверь, что на api доступен /api/routes (Express) или /api/save/routes.json (fallback).');
         return;
       }
 
@@ -182,7 +182,11 @@ export default function HomePage() {
                             const middleCount = Math.max(0, rec.stops.length - 2);
                             if (idx === 0 || idx === rec.stops.length - 1) return undefined; // старт/финиш нельзя
                             if (middleCount <= 1) return undefined; // единственную промежуточную нельзя
-                            return () => removeStop(s.id);
+                            return () => {
+                              if (window.confirm('Удалить этот адрес?')) {
+                                removeStop(s.id);
+                              }
+                            };
                           })()}
                           onDuplicate={idx!==rec.stops.length-1 ? () => setRec(r => ({...r, stops: [...r.stops.slice(0, idx+1), {...s, id: crypto.randomUUID()}, ...r.stops.slice(idx+1)] })) : undefined}
                         />

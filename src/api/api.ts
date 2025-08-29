@@ -16,56 +16,83 @@ function onlyOrigin(u: string): string | null {
 }
 
 function resolveApiOrigin(): string {
-  // 1) origin из переменной окружения (если в ней был путь — он будет отброшен)
   const envOrigin = onlyOrigin(RAW_API);
   if (envOrigin) return envOrigin;
-
-  // 2) origin текущего приложения
   if (typeof window !== 'undefined' && window.location?.origin) {
     return window.location.origin;
   }
-
-  // 3) запасной вариант
   return DEFAULT_API_ORIGIN;
 }
 
 type Candidate = {
-  method: 'post' | 'put';
+  method: 'post';
   url: string;
   data: any;
   headers: Record<string, string>;
   label: string; // для логов
 };
 
-function buildCandidates(date: string, payload: any): Candidate[] {
+function buildCandidates(_date: string, payload: any): Candidate[] {
   const origin = resolveApiOrigin();
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (API_KEY) headers['x-api-key'] = API_KEY;
 
-  const primaryPost: Candidate = { method: 'post', url: `${origin}/api/routes`, data: payload, headers, label: 'primary POST /api/routes' };
-  const primaryPut: Candidate  = { method: 'put',  url: `${origin}/api/routes`, data: payload, headers, label: 'primary PUT /api/routes' };
-  const primarySlash: Candidate = { method: 'post', url: `${origin}/api/routes/`, data: payload, headers, label: 'primary POST /api/routes/ (slash)' };
-
-  // Файловый fallback (совместим с nginx location ~ ^/([a-zA-Z0-9_-]+\.json)$ и Express /api/save/:fileName)
-  const filePutApi: Candidate    = { method: 'put', url: `${origin}/api/save/routes.json`, data: { days: { [date]: payload } }, headers, label: 'fallback PUT /api/save/routes.json (Express)' };
-  const fileDirectNginx: Candidate = { method: 'put', url: `${origin}/routes.json`, data: { days: { [date]: payload } }, headers, label: 'fallback PUT /routes.json (nginx direct)' };
+  // Только POST к Express — он делает upsert по дате.
+  const primaryPost: Candidate   = { method: 'post', url: `${origin}/api/routes`,  data: payload, headers, label: 'primary POST /api/routes' };
+  const primarySlash: Candidate  = { method: 'post', url: `${origin}/api/routes/`, data: payload, headers, label: 'primary POST /api/routes/ (slash)' };
 
   // Жёсткий origin на случай, если RAW_API пуст/битый
   const hard = DEFAULT_API_ORIGIN;
-  const hardPost: Candidate   = { method: 'post', url: `${hard}/api/routes`, data: payload, headers, label: 'HARD POST /api/routes' };
-  const hardPut: Candidate    = { method: 'put',  url: `${hard}/api/routes`, data: payload, headers, label: 'HARD PUT /api/routes' };
-  const hardFilePut: Candidate = { method: 'put', url: `${hard}/api/save/routes.json`, data: { days: { [date]: payload } }, headers, label: 'HARD PUT /api/save/routes.json' };
+  const hardPost: Candidate      = { method: 'post', url: `${hard}/api/routes`,    data: payload, headers, label: 'HARD POST /api/routes' };
 
-  return [
-    primaryPost,
-    primaryPut,
-    primarySlash,
-    filePutApi,
-    fileDirectNginx,
-    hardPost,
-    hardPut,
-    hardFilePut,
+  return [primaryPost, primarySlash, hardPost];
+}
+
+// --- Fallback, который НЕ затирает файл ---
+// Сначала читаем текущее содержимое, затем обновляем days[date] и пишем обратно.
+async function mergePutFallback(date: string, payload: any) {
+  const origin = resolveApiOrigin();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (API_KEY) headers['x-api-key'] = API_KEY;
+
+  let current: any = null;
+  const readUrls = [
+    `${origin}/api/data/routes.json`, // Express reader
+    `${origin}/routes.json`,          // Nginx static
   ];
+
+  for (const u of readUrls) {
+    try {
+      const r = await axios.get(u, { timeout: 8000, validateStatus: s => s >= 200 && s < 300 });
+      current = r.data;
+      break;
+    } catch {}
+  }
+
+  if (!current || typeof current !== 'object') current = {};
+  if (!current.days || typeof current.days !== 'object') current.days = {};
+  current.days[date] = payload; // upsert конкретного дня
+
+  const writeUrls = [
+    { url: `${origin}/api/save/routes.json`, label: 'fallback PUT /api/save/routes.json (Express)' },
+    { url: `${origin}/routes.json`,          label: 'fallback PUT /routes.json (nginx direct)'  },
+  ];
+
+  for (const w of writeUrls) {
+    try {
+      const res = await axios.put(w.url, current, {
+        headers,
+        timeout: 10000,
+        validateStatus: s => (s >= 200 && s < 300) || s === 204,
+      });
+      console.info('[sendDay] OK:', w.label, 'status', res.status);
+      return res.data ?? { success: true };
+    } catch (e: any) {
+      const status: number = typeof e?.response?.status === 'number' ? e.response.status : 0;
+      console.warn('[sendDay] FAIL:', w.label, `HTTP ${status}`);
+    }
+  }
+  throw new Error('Fallback PUT failed');
 }
 
 export async function sendDay(rec: DayRecord) {
@@ -79,7 +106,6 @@ export async function sendDay(rec: DayRecord) {
   const candidates = buildCandidates(rec.date, payload);
   let lastErr: any = null;
 
-  // Диагностика: покажем какие урлы будем пробовать
   try {
     console.debug('[sendDay] origin=', resolveApiOrigin(), 'RAW_API=', RAW_API);
     console.debug('[sendDay] candidates in order:', candidates.map(c => `${c.label} -> ${c.url}`));
@@ -94,7 +120,6 @@ export async function sendDay(rec: DayRecord) {
         headers: cfg.headers,
         timeout: 15000,
         withCredentials: false,
-        // 2xx и 204 считаем успехом
         validateStatus: (s) => (s >= 200 && s < 300) || s === 204,
       });
       console.info('[sendDay] OK:', cfg.label, '->', cfg.url, 'status', res.status);
@@ -104,15 +129,13 @@ export async function sendDay(rec: DayRecord) {
       const status: number = typeof e?.response?.status === 'number' ? e.response.status : 0;
       const msg = (e?.response?.data && (e.response.data.error || e.response.data.message)) || e?.message || '';
       console.warn('[sendDay] FAIL:', cfg.label, '->', cfg.url, `HTTP ${status}`, msg);
-
-      // Если это ошибка авторизации — не пробуем дальше, чтобы пользователь увидел настоящий 401/403
       if (status === 401 || status === 403) {
-        throw e;
+        throw e; // показать настоящую ошибку авторизации
       }
-      // иначе продолжаем к следующему кандидату
     }
   }
 
-  // Если дошли сюда — никто не ответил
-  throw lastErr || new Error('Не удалось отправить данные: все кандидаты не ответили.');
+  // Все POST-кандидаты не сработали — используем "умный" fallback с чтением и merge
+  return mergePutFallback(rec.date, payload);
 }
+
