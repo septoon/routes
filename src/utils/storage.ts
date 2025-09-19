@@ -10,6 +10,7 @@ export type Stop = {
   reason: string;
   status?: StopStatus;
   declineReason?: string;
+  requestNumber?: string;
 };
 
 export type DayRecord = {
@@ -20,6 +21,45 @@ export type DayRecord = {
 };
 
 const KEY = 'route.pwa.days';
+
+function makeStop(overrides: Partial<Stop> = {}): Stop {
+  return {
+    id: crypto.randomUUID(),
+    address: '',
+    org: '',
+    tid: '',
+    reason: '',
+    status: 'pending',
+    declineReason: '',
+    requestNumber: '',
+    ...overrides,
+  };
+}
+
+export function createDefaultDay(date: string): DayRecord {
+  const settings = loadSettings();
+  const start = makeStop({
+    address: settings.startAddress,
+    reason: 'Подготовка оборудования',
+    status: 'done',
+  });
+  const finish = makeStop({
+    address: settings.endAddress,
+    reason: 'Сдача оборудования',
+    status: 'done',
+  });
+
+  return {
+    date,
+    distanceKm: 0,
+    sent: false,
+    stops: [
+      start,
+      makeStop({ status: 'pending' }),
+      finish,
+    ],
+  };
+}
 
 export function loadAll(): Record<string, DayRecord> {
   try {
@@ -37,16 +77,7 @@ export function saveAll(obj: Record<string, DayRecord>) {
 export function loadDay(date: string): DayRecord {
   const all = loadAll();
   if (!all[date]) {
-    const s = loadSettings();
-    const startAddr = s.startAddress;
-    const endAddr = s.endAddress;
-    all[date] = {
-      date,
-      stops: [
-        { id: crypto.randomUUID(), address: startAddr, org: '', tid: '', reason: 'Подготовка оборудования' },
-        { id: crypto.randomUUID(), address: endAddr, org: '', tid: '', reason: 'Сдача оборудования' },
-      ],
-    };
+    all[date] = createDefaultDay(date);
     saveAll(all);
   }
   return all[date];
@@ -56,4 +87,12 @@ export function saveDay(rec: DayRecord) {
   const all = loadAll();
   all[rec.date] = rec;
   saveAll(all);
+}
+
+export function removeDay(date: string) {
+  const all = loadAll();
+  if (all[date]) {
+    delete all[date];
+    saveAll(all);
+  }
 }

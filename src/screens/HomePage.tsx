@@ -1,119 +1,205 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import CalendarPicker from '../components/CalendarPicker';
 import StopCard from '../components/StopCard';
 import { humanDate, ymd } from '../utils/date';
 import { useDay } from '../hooks/useDay';
-import { sendDay } from '../api/api';
-import { loadSettings } from '../utils/settings';
+import { buildSendPayload, fetchDay, sendDay } from '../api/api';
 import { computeDistanceForDay } from '../services/routing';
 import { DragDropContext, Droppable, Draggable, DropResult, DroppableProvided, DraggableProvided } from '@hello-pangea/dnd';
 import { loadAll } from '../utils/storage';
+import type { DayRecord } from '../utils/storage';
 import { enqueue } from '../utils/queue';
 import { getRegistration } from '../serviceWorkerRegistration';
-
-function normalizeForSend(r: any, date: string) {
-  const clean = (v: any) => (typeof v === 'string' ? v.trim() : v ?? '');
-  return {
-    date, // всегда отправляем выбранную дату, а не то, что случайно лежит в записи
-    distanceKm: typeof r.distanceKm === 'number' ? r.distanceKm : 0,
-    sent: !!r.sent,
-    stops: (r.stops || []).map((s: any) => ({
-      id: s.id,
-      address: clean(s.address),
-      org: clean(s.org),
-      tid: clean(s.tid),
-      reason: clean(s.reason),
-      status: clean(s.status) || 'Выполнена',
-      rejectReason: clean(s.rejectReason || ''),
-    })),
-  };
-}
 
 export default function HomePage() {
   const [selected, setSelected] = useState<Date>(new Date());
   const dateKey = useMemo(() => ymd(selected), [selected]);
-  const { rec, setRec, addMiddleStop, removeStop, updateStop } = useDay(dateKey);
-  const [orgOptions, setOrgOptions] = useState<string[]>([]);
-  const [tidOptions, setTidOptions] = useState<string[]>([]);
+  const todayKey = ymd(new Date());
+  const isToday = dateKey === todayKey;
+  const { rec, setRec, addMiddleStop, removeStop, updateStop, resetDay, persist } = useDay(dateKey, { persist: isToday });
+  const [addressOptions, setAddressOptions] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [sending, setSending] = useState(false);
+  const recRef = useRef(rec);
+  const autoSendTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    recRef.current = rec;
+  }, [rec]);
 
   // Suggestions from history
   useEffect(() => {
+    const addresses = new Set<string>();
     const all = loadAll();
-    const orgs = new Set<string>();
-    const tids = new Set<string>();
     Object.values(all).forEach((d) => d.stops.forEach((s) => {
-      if (s.org && s.org.trim()) orgs.add(s.org.trim());
-      if (s.tid && s.tid.trim()) tids.add(s.tid.trim());
+      if (s.address && s.address.trim()) addresses.add(s.address.trim());
     }));
-    setOrgOptions(Array.from(orgs).sort().slice(0, 50));
-    setTidOptions(Array.from(tids).sort().slice(0, 50));
-  }, [dateKey]);
-
-  const handleApplyDefaults = () => {
-    const s = loadSettings();
-    setRec((r) => {
-      if (!r.stops || r.stops.length < 2) return r;
-      const firstIdx = 0;
-      const lastIdx = r.stops.length - 1;
-      const updated = r.stops.map((st, idx) => {
-        if (idx === firstIdx) return { ...st, address: s.startAddress, reason: 'Подготовка оборудования' };
-        if (idx === lastIdx) return { ...st, address: s.endAddress, reason: 'Сдача оборудования' };
-        return st;
-      });
-      return { ...r, stops: updated };
+    rec.stops.forEach((s) => {
+      if (s.address && s.address.trim()) addresses.add(s.address.trim());
     });
-    alert('Офисы обновлены');
-  };
+    setAddressOptions(Array.from(addresses).sort().slice(0, 100));
+  }, [dateKey, rec.stops.map((s) => s.address).join('|')]);
 
-  const handleComputeDistance = async () => {
-    setBusy(true);
-    try {
-      const km = await computeDistanceForDay(rec);
-      setRec({ ...rec, distanceKm: km });
-    } catch (e: any) {
-      alert('Не удалось рассчитать расстояние: ' + (e?.message || 'ошибка'));
-    } finally {
-      setBusy(false);
+  const hasDataToSend = useCallback((record: DayRecord | null) => {
+    if (!record || !Array.isArray(record.stops)) return false;
+    if (record.stops.length < 3) return false;
+    const lastIdx = record.stops.length - 1;
+    return record.stops.some((stop, idx) => {
+      if (idx === 0 || idx === lastIdx) return false;
+      const address = (stop.address || '').trim();
+      const number = (stop.requestNumber || '').trim();
+      return address.length > 0 || number.length > 0;
+    });
+  }, []);
+
+  const handleSend = useCallback(async (options?: { skipConfirm?: boolean; silent?: boolean }) => {
+    const skipConfirm = !!options?.skipConfirm;
+    const silent = !!options?.silent;
+    const currentRec = recRef.current;
+
+    if (!currentRec) return;
+    if (!persist) {
+      if (!silent) alert('Отправка доступна только для сегодняшнего дня.');
+      return;
     }
-  };
+    if (!hasDataToSend(currentRec)) {
+      if (!silent) alert('Нет данных для отправки');
+      return;
+    }
+    if (!skipConfirm && !window.confirm('Вы уверены, что хотите отправить отчёт?')) return;
 
-  const handleSend = async () => {
-    if (!window.confirm('Вы уверены, что хотите отправить отчёт?')) return;
     setSending(true);
     try {
-      const payload = normalizeForSend(rec, dateKey);
-      await sendDay(payload as any);
-      setRec({ ...rec, sent: true });
-      alert('Отправлено!');
+      const payload = buildSendPayload(currentRec, dateKey);
+      await sendDay(payload);
+      resetDay(true);
+      if (!silent) alert('Отправлено!');
     } catch (e: any) {
       console.error('sendDay failed', e?.response?.status, e?.response?.data || e?.message);
       const status: number = typeof e?.response?.status === 'number' ? e.response.status : 0;
       const msg = (e?.response?.data && (e.response.data.error || e.response.data.message)) || e?.message || '';
 
       if (status === 401 || status === 403) {
-        alert('Сервер отклонил запрос (Unauthorized). Проверь API на сервере. В .env клиента ключ не обязателен.');
+        if (!silent) {
+          alert('Сервер отклонил запрос (Unauthorized). Проверь API на сервере. В .env клиента ключ не обязателен.');
+        }
         return;
       }
       if (status === 404) {
-        alert('Эндпоинт не найден (404). Проверь, что на api доступен /api/routes (Express) или /api/save/routes.json (fallback).');
+        if (!silent) {
+          alert('Эндпоинт не найден (404). Проверь, что на api доступен /api/routes (Express) или /api/save/routes.json (fallback).');
+        }
         return;
       }
 
       // Только при инфраструктурных проблемах ставим в очередь
       if ([0, 502, 503, 504].includes(status)) {
-        enqueue(rec.date);
+        enqueue(currentRec.date);
         const r = await getRegistration();
         try { await (r as any)?.sync?.register('send-queued-days'); } catch {}
-        alert('Сети нет или сервер недоступен. Заявка поставлена в очередь и будет отправлена автоматически.');
-      } else {
+        if (!silent) {
+          alert('Сети нет или сервер недоступен. Заявка поставлена в очередь и будет отправлена автоматически.');
+        }
+      } else if (!silent) {
         alert(`Не удалось отправить: HTTP ${status}${msg ? ` — ${msg}` : ''}`);
       }
     } finally {
       setSending(false);
     }
-  };
+  }, [dateKey, hasDataToSend, persist, resetDay, setRec]);
+
+  const scheduleAutoSend = useCallback((runImmediately: boolean) => {
+    if (!persist) return;
+
+    if (autoSendTimerRef.current) {
+      window.clearTimeout(autoSendTimerRef.current);
+      autoSendTimerRef.current = null;
+    }
+
+    if (recRef.current?.sent) return;
+    if (!hasDataToSend(recRef.current)) return;
+
+    const trigger = async () => {
+      if (recRef.current?.sent) return;
+      if (!hasDataToSend(recRef.current)) return;
+      await handleSend({ skipConfirm: true, silent: true });
+      if (!recRef.current?.sent) {
+        scheduleAutoSend(false);
+      }
+    };
+
+    if (runImmediately) {
+      autoSendTimerRef.current = window.setTimeout(trigger, 0);
+      return;
+    }
+
+    const now = new Date();
+    const next = new Date();
+    next.setHours(22, 0, 0, 0);
+    if (now >= next) {
+      next.setDate(next.getDate() + 1);
+    }
+
+    const delay = next.getTime() - now.getTime();
+    autoSendTimerRef.current = window.setTimeout(trigger, delay);
+  }, [handleSend, hasDataToSend, persist]);
+
+  useEffect(() => {
+    if (!persist) {
+      if (autoSendTimerRef.current) {
+        window.clearTimeout(autoSendTimerRef.current);
+        autoSendTimerRef.current = null;
+      }
+      return;
+    }
+
+    if (rec.sent) {
+      if (autoSendTimerRef.current) {
+        window.clearTimeout(autoSendTimerRef.current);
+        autoSendTimerRef.current = null;
+      }
+      return;
+    }
+
+    const now = new Date();
+    const next = new Date();
+    next.setHours(22, 0, 0, 0);
+    const shouldSendNow = now >= next;
+    scheduleAutoSend(shouldSendNow);
+
+    return () => {
+      if (autoSendTimerRef.current) {
+        window.clearTimeout(autoSendTimerRef.current);
+        autoSendTimerRef.current = null;
+      }
+    };
+  }, [dateKey, persist, rec.sent, scheduleAutoSend]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetchAndApply = async () => {
+      if (isToday) return;
+      try {
+        const serverRec = await fetchDay(dateKey);
+        if (cancelled) return;
+        if (!serverRec) return;
+
+        setRec((prev) => ({
+          ...prev,
+          ...serverRec,
+          date: dateKey,
+        }));
+      } catch (err) {
+        console.warn('Не удалось загрузить маршрут с сервера', err);
+      }
+    };
+
+    fetchAndApply();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [dateKey, isToday, setRec]);
 
   // Auto distance recompute (debounced)
   useEffect(() => {
@@ -122,14 +208,16 @@ export default function HomePage() {
     const t = setTimeout(async () => {
       try {
         setBusy(true);
-        const km = await computeDistanceForDay(rec);
-        setRec({ ...rec, distanceKm: km });
+        const km = await computeDistanceForDay(recRef.current);
+        setRec((prev) => ({ ...prev, distanceKm: km }));
+      } catch (err) {
+        console.warn('Автоподсчёт дистанции не удался', err);
       } finally {
         setBusy(false);
       }
     }, 1000);
     return () => clearTimeout(t);
-  }, [rec.stops.map((s) => s.address).join('|')]);
+  }, [rec.stops.map((s) => s.address).join('|'), setRec]);
 
   const onDragEnd = (result: DropResult) => {
     if (!result.destination) return;
@@ -152,7 +240,6 @@ export default function HomePage() {
         <div>
           <div className="flex items-center gap-3">
             <div className="text-2xl font-semibold">{humanDate(selected)}</div>
-            {rec.sent && <span className="badge bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/30">Отправлено</span>}
           </div>
           <div className="text-sm opacity-70 mt-1 flex items-center gap-2">
             Дистанция: <b>{typeof rec.distanceKm === 'number' ? rec.distanceKm.toFixed(1) : '—'}</b> км {busy && <span className="spinner" aria-label="Расчёт..."></span>}
@@ -160,8 +247,7 @@ export default function HomePage() {
         </div>
         <div className="flex items-center gap-2">
           <CalendarPicker selected={selected} onSelect={setSelected} />
-          <button className="btn btn-tonal" onClick={handleComputeDistance} disabled={busy}>{busy ? 'Считаю...' : 'Рассчитать дистанцию'}</button>
-          </div>
+        </div>
       </div>
 
       <div className="mt-2">
@@ -201,23 +287,15 @@ export default function HomePage() {
         </DragDropContext>
       </div>
 
-      <div className="mt-2">
-</div>
+      <div className="flex gap-2 mt-2">
+        <button className="btn btn-primary w-full font-bold ml-auto" onClick={() => handleSend()} disabled={sending || !persist || !hasDataToSend(rec)}>
+          {sending ? 'Отправляю…' : 'Отправить'}
+        </button>
+      </div>
 
-<div className="flex gap-2 mt-2">
-  <button className="btn btn-tonal text-sm" onClick={handleApplyDefaults} title="Применить старт/финиш из настроек">Обновить офисы</button>
-    <button className="btn btn-primary w-full font-bold ml-auto" onClick={handleSend} disabled={sending}>
-    {sending ? 'Отправляю…' : 'Отправить'}
-  </button>
-</div>
-
-<datalist id="org-list">
-        {orgOptions.map((o,i)=>(<option key={i} value={o} />))}
+      <datalist id="address-list">
+        {addressOptions.map((o, i) => (<option key={i} value={o} />))}
       </datalist>
-      <datalist id="tid-list">
-        {tidOptions.map((t,i)=>(<option key={i} value={t} />))}
-      </datalist>
-
 
     </div>
   );

@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect } from 'react';
 import axios from 'axios';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import * as XLSX from 'xlsx';
 
 function toYMD(d: Date) { return format(d, 'yyyy-MM-dd'); }
@@ -94,45 +94,47 @@ export default function ExportPage() {
     return k >= toYMD(from) && k <= toYMD(to);
   }).sort((a, b) => a.date.localeCompare(b.date));
 
+  const dayRows = filtered.map((rec: any) => {
+    const dateISO = typeof rec.date === 'string' ? rec.date : '';
+    const parsedDate = dateISO ? parseISO(dateISO) : new Date();
+    const addresses = Array.isArray(rec.stops)
+      ? rec.stops.map((s: any) => (s?.address || '').trim()).filter((a: string) => a)
+      : [];
+    const requestNumbers = Array.isArray(rec.stops)
+      ? rec.stops.map((s: any) => (s?.requestNumber || '').trim()).filter((n: string) => n)
+      : [];
+
+    return {
+      date: dateISO,
+      formattedDate: format(parsedDate, 'dd.MM.yyyy'),
+      addresses,
+      addressesLabel: addresses.length ? addresses.join(' - ') : '—',
+      addressesLabelMobile: addresses.length ? addresses.join('\n') : '—',
+      requestNumbers,
+      requestNumbersLabel: requestNumbers.length ? requestNumbers.join(' ') : '—',
+      requestNumbersLabelMobile: requestNumbers.length ? requestNumbers.join('\n') : '—',
+    };
+  });
+
   const handleExportXLSX = () => {
-    const rows: any[] = [];
-    for (const rec of filtered) {
-      rec.stops.forEach((s: any, idx: number) => {
-        rows.push({
-          Дата: rec.date,
-          Порядок: idx + 1,
-          Адрес: s.address,
-          'Название ИП': s.org,
-          TID: s.tid,
-          'Причина выезда': s.reason,
-          'Отправлено': rec.sent ? 'Да' : 'Нет',
-          'Дистанция, км': rec.distanceKm ?? ''
-        });
-      });
-    }
+    const rows = dayRows.map((row) => ({
+      Дата: row.formattedDate,
+      Адреса: row.addressesLabel,
+      'Номера заявок': row.requestNumbersLabel,
+    }));
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Маршруты');
     XLSX.writeFile(wb, `routes_${toYMD(from)}_${toYMD(to)}.xlsx`);
   };
 
-  const rows = filtered.flatMap((rec: any) => rec.stops.map((s: any, idx: number) => ({
-    date: rec.date,
-    order: idx + 1,
-    address: s.address,
-    org: s.org,
-    tid: s.tid,
-    reason: s.reason,
-    status: s.status === 'done' ? 'Выполнена' : s.status === 'declined' ? 'Отказ' : 'В процессе',
-    decline: s.declineReason || '',
-    sent: rec.sent ? 'Да' : 'Нет',
-    distance: idx === 1 ? (rec.distanceKm ?? '') : ''
-  })));
-
   const handleExportCSV = () => {
-    const header = ['Дата','Порядок','Адрес','Название ИП','TID','Причина выезда','Статус','Причина отказа','Отправлено','Дистанция, км'];
+    const header = ['Дата', 'Адреса', 'Номера заявок'];
     const csvRows = [header.join(';')];
-    rows.forEach(r => csvRows.push([r.date, r.order, r.address, r.org, r.tid, r.reason, r.status, r.decline, r.sent, r.distance].map(v => String(v).replace(/;/g, ',')).join(';')));
+    dayRows.forEach((row) => {
+      csvRows.push([row.formattedDate, row.addressesLabel, row.requestNumbersLabel]
+        .map((v) => String(v).replace(/;/g, ',')).join(';'));
+    });
     const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -187,34 +189,20 @@ export default function ExportPage() {
           <>
             {/* Desktop / tablet: таблица */}
             <div className="hidden md:block overflow-x-auto -mx-2 px-2">
-              <table className="min-w-[720px] w-full text-sm">
+              <table className="min-w-[640px] w-full text-sm">
                 <thead className="text-left opacity-70 sticky top-0 bg-black/5 dark:bg-white/5 backdrop-blur">
                   <tr>
                     <th className="pr-3 py-1">Дата</th>
-                    <th className="pr-3 py-1">#</th>
-                    <th className="pr-3 py-1">Адрес</th>
-                    <th className="pr-3 py-1">Название ИП</th>
-                    <th className="pr-3 py-1">TID</th>
-                    <th className="pr-3 py-1">Причина выезда</th>
-                    <th className="pr-3 py-1">Статус</th>
-                    <th className="pr-3 py-1">Причина отказа</th>
-                    <th className="pr-3 py-1">Отправлено</th>
-                    <th className="pr-3 py-1">Дистанция, км</th>
+                    <th className="pr-3 py-1">Адреса</th>
+                    <th className="pr-3 py-1">Номера заявок</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((r, i) => (
+                  {dayRows.map((row, i) => (
                     <tr key={i} className="border-t border-black/5 dark:border-white/10 even:bg-white/5">
-                      <td className="pr-3 py-1 whitespace-nowrap">{r.date}</td>
-                      <td className="pr-3 py-1">{r.order}</td>
-                      <td className="pr-3 py-1">{r.address}</td>
-                      <td className="pr-3 py-1">{r.org}</td>
-                      <td className="pr-3 py-1">{r.tid}</td>
-                      <td className="pr-3 py-1">{r.reason}</td>
-                      <td className="pr-3 py-1 whitespace-nowrap">{r.status}</td>
-                      <td className="pr-3 py-1">{r.decline}</td>
-                      <td className="pr-3 py-1">{r.sent}</td>
-                      <td className="pr-3 py-1">{r.distance}</td>
+                      <td className="pr-3 py-1 whitespace-nowrap">{row.formattedDate}</td>
+                      <td className="pr-3 py-1">{row.addressesLabel}</td>
+                      <td className="pr-3 py-1 whitespace-pre-wrap">{row.requestNumbersLabel}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -223,21 +211,16 @@ export default function ExportPage() {
 
             {/* Mobile: карточки */}
             <div className="md:hidden grid gap-2">
-              {rows.map((r, i) => (
+              {dayRows.map((row, i) => (
                 <div key={i} className="rounded-2xl border border-black/10 dark:border-white/10 p-3 bg-white/60 dark:bg-white/5">
-                  <div className="flex items-center justify-between mb-1">
-                    <div className="text-sm font-medium">{r.date}</div>
-                    <div className="text-xs opacity-60">#{r.order}</div>
+                  <div className="text-sm font-medium mb-2">{row.formattedDate}</div>
+                  <div className="text-sm mb-1">
+                    <span className="opacity-60">Адреса:</span>
+                    <div className="mt-1 whitespace-pre-wrap leading-snug">{row.addressesLabelMobile}</div>
                   </div>
-                  <div className="text-sm mb-1"><span className="opacity-60">Адрес: </span>{r.address || '—'}</div>
-                  {r.org ? <div className="text-sm mb-1"><span className="opacity-60">ИП/ООО: </span>{r.org}</div> : null}
-                  {r.tid ? <div className="text-sm mb-1"><span className="opacity-60">TID: </span>{r.tid}</div> : null}
-                  {r.reason ? <div className="text-sm mb-1"><span className="opacity-60">Причина: </span>{r.reason}</div> : null}
-                  <div className="text-sm mb-1"><span className="opacity-60">Статус: </span>{r.status}</div>
-                  {r.decline ? <div className="text-sm mb-1"><span className="opacity-60">Отказ: </span>{r.decline}</div> : null}
-                  <div className="text-xs opacity-70 flex items-center gap-3 mt-1">
-                    <span>Отправлено: <b>{r.sent}</b></span>
-                    {r.distance !== '' ? <span>Дистанция: <b>{r.distance}</b> км</span> : null}
+                  <div className="text-sm">
+                    <span className="opacity-60">Номера заявок:</span>
+                    <div className="mt-1 whitespace-pre-wrap leading-snug">{row.requestNumbersLabelMobile}</div>
                   </div>
                 </div>
               ))}

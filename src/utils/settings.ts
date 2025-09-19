@@ -8,8 +8,8 @@ export type Settings = {
 const SKEY = 'route.pwa.settings';
 
 const DEFAULTS: Settings = {
-  startAddress: 'Алушта, ул. Снежковой 17Б',
-  endAddress: 'Алушта, ул. Снежковой 17Б',
+  startAddress: 'ул. Снежковой 17Б',
+  endAddress: 'ул. Снежковой 17Б',
   reasonTemplates: [
     { label: 'Сервисная', color: '#4ade80' },
     { label: '(добавление канала WIFI)', color: '#f97316' },

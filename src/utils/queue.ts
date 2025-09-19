@@ -1,5 +1,5 @@
 import { DayRecord } from './storage';
-import { sendDay } from '../api/api';
+import { buildSendPayload, sendDay } from '../api/api';
 
 const QKEY = 'route.pwa.queue';
 
@@ -32,7 +32,8 @@ export async function processQueue(loadDay: (d: string) => DayRecord, onSuccess?
   for (const item of q) {
     try {
       const rec = loadDay(item.date);
-      await sendDay(rec);
+      const payload = buildSendPayload(rec, item.date);
+      await sendDay(payload);
       dequeue(item.date);
       onSuccess && onSuccess(item.date);
     } catch (e) {

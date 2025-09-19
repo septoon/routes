@@ -1,5 +1,56 @@
 import axios from 'axios';
-import type { DayRecord } from '../utils/storage';
+import { createDefaultDay, DayRecord, Stop, StopStatus } from '../utils/storage';
+
+export type SendDayPayload = {
+  date: string;
+  distanceKm: number;
+  sent: boolean;
+  stops: Array<{
+    id: string;
+    address: string;
+    org: string;
+    tid: string;
+    reason: string;
+    status: string;
+    rejectReason: string;
+    requestNumber: string;
+  }>;
+};
+
+const STATUS_TO_LABEL: Record<StopStatus, string> = {
+  done: 'Выполнена',
+  declined: 'Отказ',
+  pending: 'В процессе',
+};
+
+function statusToLabel(status?: string | null): string {
+  if (!status) return STATUS_TO_LABEL.done;
+  if (status in STATUS_TO_LABEL) {
+    return STATUS_TO_LABEL[status as StopStatus];
+  }
+  return String(status);
+}
+
+export function buildSendPayload(record: DayRecord, dateOverride?: string): SendDayPayload {
+  const date = dateOverride || record.date;
+  const clean = (value: unknown) => (typeof value === 'string' ? value.trim() : '');
+
+  return {
+    date,
+    distanceKm: typeof record.distanceKm === 'number' ? record.distanceKm : 0,
+    sent: !!record.sent,
+    stops: (record.stops || []).map((stop) => ({
+      id: stop.id,
+      address: clean(stop.address),
+      org: clean(stop.org),
+      tid: clean(stop.tid),
+      reason: clean(stop.reason),
+      status: statusToLabel(stop.status),
+      rejectReason: clean(stop.declineReason || (stop as any).rejectReason || ''),
+      requestNumber: clean(stop.requestNumber),
+    })),
+  };
+}
 
 const RAW_API = `${process.env.REACT_APP_API_URL || ''}`.trim();
 const DEFAULT_API_ORIGIN = 'https://api.lumastack.ru';
@@ -32,7 +83,7 @@ type Candidate = {
   label: string; // для логов
 };
 
-function buildCandidates(_date: string, payload: any): Candidate[] {
+function buildCandidates(_date: string, payload: SendDayPayload): Candidate[] {
   const origin = resolveApiOrigin();
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (API_KEY) headers['x-api-key'] = API_KEY;
@@ -48,9 +99,27 @@ function buildCandidates(_date: string, payload: any): Candidate[] {
   return [primaryPost, primarySlash, hardPost];
 }
 
+function buildRoutesReadCandidates(): string[] {
+  const origin = resolveApiOrigin();
+  const list: string[] = [
+    `${origin}/api/data/routes.json`,
+    `${origin}/routes.json`,
+  ];
+
+  if (origin !== DEFAULT_API_ORIGIN) {
+    list.push(`${DEFAULT_API_ORIGIN}/api/data/routes.json`);
+    list.push(`${DEFAULT_API_ORIGIN}/routes.json`);
+  }
+
+  list.push('/api/data/routes.json');
+  list.push('/routes.json');
+
+  return Array.from(new Set(list));
+}
+
 // --- Fallback, который НЕ затирает файл ---
 // Сначала читаем текущее содержимое, затем обновляем days[date] и пишем обратно.
-async function mergePutFallback(date: string, payload: any) {
+async function mergePutFallback(date: string, payload: SendDayPayload) {
   const origin = resolveApiOrigin();
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (API_KEY) headers['x-api-key'] = API_KEY;
@@ -95,7 +164,7 @@ async function mergePutFallback(date: string, payload: any) {
   throw new Error('Fallback PUT failed');
 }
 
-export async function sendDay(rec: DayRecord) {
+export async function sendDay(rec: SendDayPayload) {
   const payload = {
     date: rec.date,
     stops: rec.stops,
@@ -139,3 +208,102 @@ export async function sendDay(rec: DayRecord) {
   return mergePutFallback(rec.date, payload);
 }
 
+type RawStop = Partial<Stop> & {
+  rejectReason?: string;
+};
+
+type RawDay = {
+  date?: string;
+  distanceKm?: number;
+  sent?: boolean;
+  stops?: RawStop[];
+};
+
+function extractDayFromPayload(payload: any, date: string): RawDay | null {
+  if (!payload) return null;
+  if (Array.isArray(payload)) {
+    const match = payload.find((item: any) => item && item.date === date);
+    return match || null;
+  }
+  if (payload.days && typeof payload.days === 'object') {
+    return payload.days[date] || null;
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, date)) {
+    return payload[date];
+  }
+  return null;
+}
+
+function normalizeStatus(value: unknown): StopStatus {
+  if (typeof value === 'string') {
+    const lowered = value.toLowerCase();
+    if (lowered.includes('decline') || lowered.includes('отказ')) return 'declined';
+    if (lowered.includes('done') || lowered.includes('выполн')) return 'done';
+  }
+  if (value === 'declined') return 'declined';
+  if (value === 'done') return 'done';
+  return 'pending';
+}
+
+function normalizeStop(raw: RawStop): Stop {
+  return {
+    id: raw.id || crypto.randomUUID(),
+    address: typeof raw.address === 'string' ? raw.address : '',
+    org: typeof raw.org === 'string' ? raw.org : '',
+    tid: typeof raw.tid === 'string' ? raw.tid : '',
+    reason: typeof raw.reason === 'string' ? raw.reason : '',
+    status: normalizeStatus(raw.status),
+    declineReason: typeof raw.declineReason === 'string'
+      ? raw.declineReason
+      : typeof raw.rejectReason === 'string'
+        ? raw.rejectReason
+        : '',
+    requestNumber: typeof raw.requestNumber === 'string' ? raw.requestNumber : '',
+  };
+}
+
+function normalizeRemoteDay(raw: RawDay | null, date: string): DayRecord | null {
+  if (!raw) return null;
+  const base = createDefaultDay(date);
+  const stops = Array.isArray(raw.stops) && raw.stops.length
+    ? raw.stops.map(normalizeStop)
+    : base.stops;
+
+  return {
+    date,
+    stops,
+    distanceKm: typeof raw.distanceKm === 'number' ? raw.distanceKm : base.distanceKm,
+    sent: !!raw.sent,
+  };
+}
+
+export async function fetchDay(date: string): Promise<DayRecord | null> {
+  const candidates = buildRoutesReadCandidates();
+  let lastErr: any = null;
+
+  for (const url of candidates) {
+    try {
+      const res = await axios.get(url, {
+        headers: { Accept: 'application/json' },
+        timeout: 12000,
+        withCredentials: false,
+        validateStatus: (s) => (s >= 200 && s < 300) || s === 304,
+      });
+
+      const day = normalizeRemoteDay(extractDayFromPayload(res.data, date), date);
+      if (day) return day;
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+
+  if (lastErr) {
+    try {
+      const status = (lastErr as any)?.response?.status;
+      const msg = (lastErr as any)?.message;
+      console.warn('[fetchDay] Unable to load day', date, status || '', msg || '');
+    } catch {}
+  }
+
+  return null;
+}

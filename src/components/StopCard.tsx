@@ -1,5 +1,4 @@
 import { Stop } from '../utils/storage';
-import { loadSettings, getReasonLabel, getReasonColor } from "../utils/settings";
 
 type Props = {
   stop: Stop;
@@ -26,59 +25,10 @@ export default function StopCard({ stop, readonlyFirstLast, onChange, addMiddleS
         ) : (
           <>
             <label className="text-sm opacity-70">Адрес</label>
-            <input className="input" placeholder="Адрес" value={stop.address} onChange={e => onChange({ address: e.target.value })} />
+            <input className="input" placeholder="Адрес" value={stop.address} onChange={e => onChange({ address: e.target.value })} list={"address-list"} />
 
-            <label className="text-sm opacity-70">Название ИП</label>
-            <input className="input" placeholder="ООО/ИП" value={stop.org} onChange={e => onChange({ org: e.target.value })} list={"org-list"} />
-
-
-            <label className="text-sm opacity-70">TID</label>
-            <input className="input" placeholder="ID терминала" value={stop.tid} onChange={e => onChange({ tid: e.target.value })} list={"tid-list"} />
-
-            <label className="text-sm opacity-70 flex items-center justify-between">Причина выезда
-              <span className="text-xs opacity-60">(шаблоны ниже)</span>
-            </label>
-            <div className="flex items-center gap-2">
-              <input className="input" placeholder="Описание" value={stop.reason} onChange={e => onChange({ reason: e.target.value })} list={"reasons-list"} />
-              {(() => { 
-                const t = loadSettings().reasonTemplates.find(rt => getReasonLabel(rt) === stop.reason); 
-                if (!t) return null; 
-                const c = getReasonColor(t); 
-                return c ? <span title="Цвет тега" style={{ backgroundColor: c }} className="inline-block w-4 h-4 rounded-full border border-black/10 dark:border-white/20"></span> : null; 
-              })()}
-            </div>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {loadSettings().reasonTemplates.map((t, i) => {
-                const label = getReasonLabel(t); const color = getReasonColor(t);
-                const style: any = color ? { backgroundColor: color + "22", borderColor: color + "55", color: color } : {};
-                return (
-                  <button type="button" key={i} className="chip border" style={style}
-                    onClick={() => onChange({ reason: label })}>{label}</button>
-                );
-              })}
-            </div>
-
-            <div className="mt-3 grid gap-2">
-              <div className="text-sm opacity-70">Статус</div>
-              <div className="flex gap-2">
-                <button type="button"
-                  className={`btn ${stop.status === 'done' ? 'btn-primary' : 'btn-tonal'}`}
-                  onClick={() => onChange({ status: 'done', declineReason: '' })}>Выполнена</button>
-                <button type="button"
-                  className={`btn ${stop.status === 'declined' ? 'btn-primary' : 'btn-tonal'}`}
-                  onClick={() => onChange({ status: 'declined' })}>Отказ</button>
-                <button type="button"
-                  className={`btn ${!stop.status || stop.status === 'pending' ? 'btn-primary' : 'btn-tonal'}`}
-                  onClick={() => onChange({ status: 'pending', declineReason: '' })}>В процессе</button>
-              </div>
-              {stop.status === 'declined' && (
-                <div>
-                  <div className="text-sm opacity-70 mb-1">Причина отказа (необязательно)</div>
-                  <input className="input" placeholder="Комментарий" value={stop.declineReason || ''}
-                    onChange={e => onChange({ declineReason: e.target.value })} />
-                </div>
-              )}
-            </div>
+            <label className="text-sm opacity-70">Номер заявки</label>
+            <input className="input" placeholder="Номер заявки" value={stop.requestNumber || ''} onChange={e => onChange({ requestNumber: e.target.value })} />
           </>
         )}
       </div>
