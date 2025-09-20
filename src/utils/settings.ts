@@ -12,8 +12,6 @@ const DEFAULTS: Settings = {
   endAddress: 'ул. Снежковой 17Б',
   reasonTemplates: [
     { label: 'Сервисная', color: '#4ade80' },
-    { label: '(добавление канала WIFI)', color: '#f97316' },
-    { label: '(добавление канала Ethernet)', color: '#f59e0b' },
     { label: 'Установка', color: '#f43f5e' },
     { label: 'Обновление ПО', color: '#60a5fa' },
     { label: 'Замена терминала', color: '#a78bfa' },
