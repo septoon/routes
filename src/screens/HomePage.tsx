@@ -6,7 +6,7 @@ import { useDay } from '../hooks/useDay';
 import { buildSendPayload, fetchDay, sendDay } from '../api/api';
 import { computeDistanceForDay } from '../services/routing';
 import { DragDropContext, Droppable, Draggable, DropResult, DroppableProvided, DraggableProvided } from '@hello-pangea/dnd';
-import { loadAll } from '../utils/storage';
+import { createDefaultDay, loadAll } from '../utils/storage';
 import type { DayRecord } from '../utils/storage';
 import { enqueue } from '../utils/queue';
 import { getRegistration } from '../serviceWorkerRegistration';
@@ -176,21 +176,23 @@ export default function HomePage() {
   }, [dateKey, persist, rec.sent, scheduleAutoSend]);
 
   useEffect(() => {
+    if (isToday) return;
     let cancelled = false;
     const fetchAndApply = async () => {
-      if (isToday) return;
       try {
         const serverRec = await fetchDay(dateKey);
         if (cancelled) return;
-        if (!serverRec) return;
+        if (!serverRec) {
+          setRec(createDefaultDay(dateKey));
+          return;
+        }
 
-        setRec((prev) => ({
-          ...prev,
-          ...serverRec,
-          date: dateKey,
-        }));
+        setRec(serverRec);
       } catch (err) {
         console.warn('Не удалось загрузить маршрут с сервера', err);
+        if (!cancelled) {
+          setRec(createDefaultDay(dateKey));
+        }
       }
     };
 
@@ -234,7 +236,7 @@ export default function HomePage() {
   };
 
   return (
-    <div className="space-y-3 pt-10 pb-24">
+    <div className="flex flex-col gap-4 pb-24 pt-10 w-full">
       
       <div className="flex items-center justify-between">
         <div>

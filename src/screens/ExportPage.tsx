@@ -143,7 +143,7 @@ export default function ExportPage() {
   };
 
   return (
-    <div className="space-y-3 pt-10 pb-24">
+    <div className="flex flex-col gap-4 pb-24 pt-10 w-full">
       <div className="text-xl font-semibold">Экспорт</div>
       <div className="card grid gap-3">
         <div className="date-grid grid grid-cols-2 gap-3 items-stretch">

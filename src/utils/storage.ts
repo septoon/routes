@@ -39,11 +39,13 @@ function makeStop(overrides: Partial<Stop> = {}): Stop {
 export function createDefaultDay(date: string): DayRecord {
   const settings = loadSettings();
   const start = makeStop({
+    id: `start-${date}`,
     address: settings.startAddress,
     reason: 'Подготовка оборудования',
     status: 'done',
   });
   const finish = makeStop({
+    id: `finish-${date}`,
     address: settings.endAddress,
     reason: 'Сдача оборудования',
     status: 'done',
@@ -55,7 +57,7 @@ export function createDefaultDay(date: string): DayRecord {
     sent: false,
     stops: [
       start,
-      makeStop({ status: 'pending' }),
+      makeStop({ id: `middle-${date}`, status: 'pending' }),
       finish,
     ],
   };

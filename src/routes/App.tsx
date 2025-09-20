@@ -6,9 +6,9 @@ import SettingsPage from '../screens/SettingsPage';
 export default function App() {
   const loc = useLocation();
   return (
-    <div className="min-h-screen pb-24 px-3 pt-6 safe-area-inset">
+    <div className="min-h-screen w-full px-3 pt-6 pb-24 safe-area-inset flex flex-col">
 
-      <main>
+      <main className="flex-1">
         <Routes location={loc}>
           <Route path="/" element={<Navigate to="/home" replace />} />
           <Route path="/home" element={<HomePage />} />

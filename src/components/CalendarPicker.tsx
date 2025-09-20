@@ -21,7 +21,10 @@ export default function CalendarPicker({ selected, onSelect }: Props) {
         📅
       </button>
       {open && (
-        <div className="absolute left-1/2 -translate-x-1/2 mt-2 z-50 card shadow-lg">
+        <div
+          className="absolute right-0 mt-2 z-50 card shadow-lg"
+          style={{ width: 'min(340px, calc(100vw - 3rem))', maxWidth: 'calc(100vw - 3rem)' }}
+        >
           <DayPicker
             mode="single"
             selected={selected}

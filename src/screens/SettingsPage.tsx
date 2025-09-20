@@ -25,7 +25,7 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="space-y-3 pt-10 pb-24">
+    <div className="flex flex-col gap-4 pb-24 pt-10 w-full">
       <div className="text-xl font-semibold">Настройки</div>
 
       <div className="card grid gap-3">
@@ -38,7 +38,7 @@ export default function SettingsPage() {
           <input className="input" value={s.endAddress} onChange={e => setS({ ...s, endAddress: e.target.value })} />
         </div>
         <button className="btn btn-primary w-full" onClick={handleSave}>Сохранить</button>
-        <div className="text-sm opacity-60">Новые дни будут создаваться с этими офисами. На странице «Сегодня» можно применить настройки к текущему дню кнопкой «Обновить офисы».</div>
+        <div className="text-sm opacity-60">Новые дни создаются с этими офисами. Измените их, если старт или финиш изменились.</div>
       </div>
 
       <div className="card">

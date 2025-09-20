@@ -3,6 +3,7 @@
 @tailwind utilities;
 
 html, body, #root { height: 100%; }
+#root { width: 100%; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; @apply bg-white text-black dark:bg-black dark:text-white; }
 
 /* iOS-like card */
@@ -11,10 +12,6 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Di
 .btn { @apply inline-flex items-center justify-center rounded-md px-4 py-3 font-medium shadow-sm border border-black/10 dark:border-white/20 active:scale-[0.985] transition-transform; }
 .btn-primary { @apply bg-primary text-white; }
 .btn-tonal { @apply bg-white/70 dark:bg-white/10; }
-
-/* Mobile-first layout */
-#root { display: flex; justify-content: center; }
-.app-container { width: 100%; max-width: 430px; margin: 0 auto; padding: 8px; }
 
 /* Compact UI */
 .card { @apply rounded-2xl p-3 shadow bg-white/70 dark:bg-white/5 backdrop-blur border border-black/5 dark:border-white/10; }
