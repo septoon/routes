@@ -3,7 +3,6 @@ import { createDefaultDay, DayRecord, Stop, StopStatus } from '../utils/storage'
 
 export type SendDayPayload = {
   date: string;
-  distanceKm: number;
   sent: boolean;
   stops: Array<{
     id: string;
@@ -37,7 +36,6 @@ export function buildSendPayload(record: DayRecord, dateOverride?: string): Send
 
   return {
     date,
-    distanceKm: typeof record.distanceKm === 'number' ? record.distanceKm : 0,
     sent: !!record.sent,
     stops: (record.stops || []).map((stop) => ({
       id: stop.id,
@@ -168,7 +166,6 @@ export async function sendDay(rec: SendDayPayload) {
   const payload = {
     date: rec.date,
     stops: rec.stops,
-    distanceKm: typeof rec.distanceKm === 'number' ? rec.distanceKm : 0,
     sent: !!rec.sent,
   };
 
@@ -214,7 +211,6 @@ type RawStop = Partial<Stop> & {
 
 type RawDay = {
   date?: string;
-  distanceKm?: number;
   sent?: boolean;
   stops?: RawStop[];
 };
@@ -272,7 +268,6 @@ function normalizeRemoteDay(raw: RawDay | null, date: string): DayRecord | null 
   return {
     date,
     stops,
-    distanceKm: typeof raw.distanceKm === 'number' ? raw.distanceKm : base.distanceKm,
     sent: !!raw.sent,
   };
 }

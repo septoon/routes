@@ -4,9 +4,8 @@ import StopCard from '../components/StopCard';
 import { humanDate, ymd } from '../utils/date';
 import { useDay } from '../hooks/useDay';
 import { buildSendPayload, fetchDay, sendDay } from '../api/api';
-import { computeDistanceForDay } from '../services/routing';
 import { DragDropContext, Droppable, Draggable, DropResult, DroppableProvided, DraggableProvided } from '@hello-pangea/dnd';
-import { createDefaultDay, loadAll } from '../utils/storage';
+import { loadAll } from '../utils/storage';
 import type { DayRecord } from '../utils/storage';
 import { enqueue } from '../utils/queue';
 import { getRegistration } from '../serviceWorkerRegistration';
@@ -16,12 +15,10 @@ export default function HomePage() {
   const dateKey = useMemo(() => ymd(selected), [selected]);
   const todayKey = ymd(new Date());
   const isToday = dateKey === todayKey;
-  const { rec, setRec, addMiddleStop, removeStop, updateStop, resetDay, persist } = useDay(dateKey, { persist: isToday });
+  const { rec, setRec, addMiddleStop, removeStop, updateStop, resetDay } = useDay(dateKey);
   const [addressOptions, setAddressOptions] = useState<string[]>([]);
-  const [busy, setBusy] = useState(false);
   const [sending, setSending] = useState(false);
   const recRef = useRef(rec);
-  const autoSendTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     recRef.current = rec;
@@ -58,10 +55,6 @@ export default function HomePage() {
     const currentRec = recRef.current;
 
     if (!currentRec) return;
-    if (!persist) {
-      if (!silent) alert('Отправка доступна только для сегодняшнего дня.');
-      return;
-    }
     if (!hasDataToSend(currentRec)) {
       if (!silent) alert('Нет данных для отправки');
       return;
@@ -106,93 +99,24 @@ export default function HomePage() {
     } finally {
       setSending(false);
     }
-  }, [dateKey, hasDataToSend, persist, resetDay, setRec]);
-
-  const scheduleAutoSend = useCallback((runImmediately: boolean) => {
-    if (!persist) return;
-
-    if (autoSendTimerRef.current) {
-      window.clearTimeout(autoSendTimerRef.current);
-      autoSendTimerRef.current = null;
-    }
-
-    if (recRef.current?.sent) return;
-    if (!hasDataToSend(recRef.current)) return;
-
-    const trigger = async () => {
-      if (recRef.current?.sent) return;
-      if (!hasDataToSend(recRef.current)) return;
-      await handleSend({ skipConfirm: true, silent: true });
-      if (!recRef.current?.sent) {
-        scheduleAutoSend(false);
-      }
-    };
-
-    if (runImmediately) {
-      autoSendTimerRef.current = window.setTimeout(trigger, 0);
-      return;
-    }
-
-    const now = new Date();
-    const next = new Date();
-    next.setHours(22, 0, 0, 0);
-    if (now >= next) {
-      next.setDate(next.getDate() + 1);
-    }
-
-    const delay = next.getTime() - now.getTime();
-    autoSendTimerRef.current = window.setTimeout(trigger, delay);
-  }, [handleSend, hasDataToSend, persist]);
-
-  useEffect(() => {
-    if (!persist) {
-      if (autoSendTimerRef.current) {
-        window.clearTimeout(autoSendTimerRef.current);
-        autoSendTimerRef.current = null;
-      }
-      return;
-    }
-
-    if (rec.sent) {
-      if (autoSendTimerRef.current) {
-        window.clearTimeout(autoSendTimerRef.current);
-        autoSendTimerRef.current = null;
-      }
-      return;
-    }
-
-    const now = new Date();
-    const next = new Date();
-    next.setHours(22, 0, 0, 0);
-    const shouldSendNow = now >= next;
-    scheduleAutoSend(shouldSendNow);
-
-    return () => {
-      if (autoSendTimerRef.current) {
-        window.clearTimeout(autoSendTimerRef.current);
-        autoSendTimerRef.current = null;
-      }
-    };
-  }, [dateKey, persist, rec.sent, scheduleAutoSend]);
+  }, [dateKey, hasDataToSend, resetDay, setRec]);
 
   useEffect(() => {
     if (isToday) return;
+    const currentRec = recRef.current;
+    const hasLocalData = currentRec && currentRec.date === dateKey
+      ? hasDataToSend(currentRec) && !currentRec.sent
+      : false;
+    if (hasLocalData) return;
+
     let cancelled = false;
     const fetchAndApply = async () => {
       try {
         const serverRec = await fetchDay(dateKey);
-        if (cancelled) return;
-        if (!serverRec) {
-          setRec(createDefaultDay(dateKey));
-          return;
-        }
-
+        if (cancelled || !serverRec) return;
         setRec(serverRec);
       } catch (err) {
         console.warn('Не удалось загрузить маршрут с сервера', err);
-        if (!cancelled) {
-          setRec(createDefaultDay(dateKey));
-        }
       }
     };
 
@@ -201,25 +125,7 @@ export default function HomePage() {
     return () => {
       cancelled = true;
     };
-  }, [dateKey, isToday, setRec]);
-
-  // Auto distance recompute (debounced)
-  useEffect(() => {
-    const addresses = rec.stops.map((s) => (s.address || '').trim());
-    if (addresses.length < 2 || addresses.some((a) => !a)) return;
-    const t = setTimeout(async () => {
-      try {
-        setBusy(true);
-        const km = await computeDistanceForDay(recRef.current);
-        setRec((prev) => ({ ...prev, distanceKm: km }));
-      } catch (err) {
-        console.warn('Автоподсчёт дистанции не удался', err);
-      } finally {
-        setBusy(false);
-      }
-    }, 1000);
-    return () => clearTimeout(t);
-  }, [rec.stops.map((s) => s.address).join('|'), setRec]);
+  }, [dateKey, hasDataToSend, isToday, setRec]);
 
   const onDragEnd = (result: DropResult) => {
     if (!result.destination) return;
@@ -242,9 +148,6 @@ export default function HomePage() {
         <div>
           <div className="flex items-center gap-3">
             <div className="text-2xl font-semibold">{humanDate(selected)}</div>
-          </div>
-          <div className="text-sm opacity-70 mt-1 flex items-center gap-2">
-            Дистанция: <b>{typeof rec.distanceKm === 'number' ? rec.distanceKm.toFixed(1) : '—'}</b> км {busy && <span className="spinner" aria-label="Расчёт..."></span>}
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -290,7 +193,7 @@ export default function HomePage() {
       </div>
 
       <div className="flex gap-2 mt-2">
-        <button className="btn btn-primary w-full font-bold ml-auto" onClick={() => handleSend()} disabled={sending || !persist || !hasDataToSend(rec)}>
+        <button className="btn btn-primary w-full font-bold ml-auto" onClick={() => handleSend()} disabled={sending || !hasDataToSend(rec)}>
           {sending ? 'Отправляю…' : 'Отправить'}
         </button>
       </div>

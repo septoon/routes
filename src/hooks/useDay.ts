@@ -91,7 +91,6 @@ function buildDay(date: string, persist: boolean): DayRecord {
   const stored = loadDay(date);
   const normalized: DayRecord = {
     date,
-    distanceKm: typeof stored.distanceKm === 'number' ? stored.distanceKm : base.distanceKm,
     sent: !!stored.sent,
     stops: hydrateStops(stored.stops, base.stops),
   };
@@ -151,9 +150,6 @@ export function useDay(date: string, options: UseDayOptions = {}) {
   const resetDay = useCallback((nextSent = false) => {
     const next = createDefaultDay(date);
     next.sent = nextSent;
-    if (!nextSent) {
-      next.distanceKm = 0;
-    }
     setRec(next);
     if (!persist) return;
     saveDay(next);
