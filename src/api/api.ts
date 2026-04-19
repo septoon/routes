@@ -1,8 +1,11 @@
 import axios from 'axios';
 import { createDefaultDay, DayRecord, Stop, StopStatus } from '../utils/storage';
+import { buildRoutesReportEntries, normalizeFuelReportEntries, normalizeNumber } from '../utils/report';
 
 export type SendDayPayload = {
   date: string;
+  distanceKm?: number | null;
+  periodStartOdometer?: number | null;
   sent: boolean;
   stops: Array<{
     id: string;
@@ -36,6 +39,8 @@ export function buildSendPayload(record: DayRecord, dateOverride?: string): Send
 
   return {
     date,
+    distanceKm: normalizeNumber((record as DayRecord).distanceKm),
+    periodStartOdometer: normalizeNumber((record as DayRecord).periodStartOdometer),
     sent: !!record.sent,
     stops: (record.stops || []).map((stop) => ({
       id: stop.id,
@@ -139,6 +144,8 @@ async function mergePutFallback(date: string, payload: SendDayPayload) {
   if (!current || typeof current !== 'object') current = {};
   if (!current.days || typeof current.days !== 'object') current.days = {};
   current.days[date] = payload; // upsert конкретного дня
+  current.routes = buildRoutesReportEntries(current.days, current.routes);
+  current.fuel_entries = normalizeFuelReportEntries(current.fuel_entries);
 
   const writeUrls = [
     { url: `${origin}/api/save/routes.json`, label: 'fallback PUT /api/save/routes.json (Express)' },
@@ -165,6 +172,8 @@ async function mergePutFallback(date: string, payload: SendDayPayload) {
 export async function sendDay(rec: SendDayPayload) {
   const payload = {
     date: rec.date,
+    distanceKm: normalizeNumber(rec.distanceKm),
+    periodStartOdometer: normalizeNumber(rec.periodStartOdometer),
     stops: rec.stops,
     sent: !!rec.sent,
   };
@@ -211,6 +220,10 @@ type RawStop = Partial<Stop> & {
 
 type RawDay = {
   date?: string;
+  distanceKm?: number | null;
+  distance_km?: number | null;
+  periodStartOdometer?: number | null;
+  period_start_odometer?: number | null;
   sent?: boolean;
   stops?: RawStop[];
 };
@@ -268,6 +281,8 @@ function normalizeRemoteDay(raw: RawDay | null, date: string): DayRecord | null 
   return {
     date,
     stops,
+    distanceKm: normalizeNumber(raw.distanceKm ?? raw.distance_km),
+    periodStartOdometer: normalizeNumber(raw.periodStartOdometer ?? raw.period_start_odometer),
     sent: !!raw.sent,
   };
 }
