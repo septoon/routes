@@ -9,6 +9,7 @@ import { loadAll } from '../utils/storage';
 import type { DayRecord } from '../utils/storage';
 import { enqueue } from '../utils/queue';
 import { getRegistration } from '../serviceWorkerRegistration';
+import { REPORT_START_DATE, isReportDateEligible, normalizeNumber } from '../utils/report';
 
 export default function HomePage() {
   const [selected, setSelected] = useState<Date>(new Date());
@@ -49,6 +50,20 @@ export default function HomePage() {
     });
   }, []);
 
+  const validateReportFields = useCallback((record: DayRecord | null) => {
+    if (!record || !isReportDateEligible(record.date)) return null;
+
+    if (normalizeNumber(record.distanceKm) === null) {
+      return `Начиная с ${REPORT_START_DATE} заполните пробег за день.`;
+    }
+
+    if (normalizeNumber(record.periodStartOdometer) === null) {
+      return `Начиная с ${REPORT_START_DATE} заполните одометр на начало месяца.`;
+    }
+
+    return null;
+  }, []);
+
   const handleSend = useCallback(async (options?: { skipConfirm?: boolean; silent?: boolean }) => {
     const skipConfirm = !!options?.skipConfirm;
     const silent = !!options?.silent;
@@ -57,6 +72,11 @@ export default function HomePage() {
     if (!currentRec) return;
     if (!hasDataToSend(currentRec)) {
       if (!silent) alert('Нет данных для отправки');
+      return;
+    }
+    const reportValidationError = validateReportFields(currentRec);
+    if (reportValidationError) {
+      if (!silent) alert(reportValidationError);
       return;
     }
     if (!skipConfirm && !window.confirm('Вы уверены, что хотите отправить отчёт?')) return;
@@ -99,7 +119,7 @@ export default function HomePage() {
     } finally {
       setSending(false);
     }
-  }, [dateKey, hasDataToSend, resetDay, setRec]);
+  }, [dateKey, hasDataToSend, resetDay, setRec, validateReportFields]);
 
   useEffect(() => {
     if (isToday) return;
@@ -190,6 +210,46 @@ export default function HomePage() {
             )}
           </Droppable>
         </DragDropContext>
+      </div>
+
+      <div className="card">
+        <div className="grid gap-2">
+          <label className="text-sm opacity-70">Пробег за день (км)</label>
+          <input
+            className="input"
+            type="number"
+            min="0"
+            step="0.1"
+            placeholder={dateKey >= REPORT_START_DATE ? 'Обязательно для Excel-отчёта' : 'Необязательно'}
+            value={rec.distanceKm ?? ''}
+            onChange={(e) => {
+              const value = e.target.value.trim();
+              setRec((current) => ({
+                ...current,
+                sent: false,
+                distanceKm: value ? Number(value) : null,
+              }));
+            }}
+          />
+
+          <label className="text-sm opacity-70">Одометр на начало месяца</label>
+          <input
+            className="input"
+            type="number"
+            min="0"
+            step="1"
+            placeholder={dateKey >= REPORT_START_DATE ? 'Повторяется у всех дней месяца' : 'Необязательно'}
+            value={rec.periodStartOdometer ?? ''}
+            onChange={(e) => {
+              const value = e.target.value.trim();
+              setRec((current) => ({
+                ...current,
+                sent: false,
+                periodStartOdometer: value ? Number(value) : null,
+              }));
+            }}
+          />
+        </div>
       </div>
 
       <div className="flex gap-2 mt-2">
