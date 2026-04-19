@@ -16,6 +16,8 @@ export type Stop = {
 export type DayRecord = {
   date: string; // YYYY-MM-DD
   stops: Stop[];
+  distanceKm?: number | null;
+  periodStartOdometer?: number | null;
   sent?: boolean;
 };
 
@@ -52,6 +54,8 @@ export function createDefaultDay(date: string): DayRecord {
 
   return {
     date,
+    distanceKm: null,
+    periodStartOdometer: null,
     sent: false,
     stops: [
       start,
