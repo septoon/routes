@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { createDefaultDay, DayRecord, Stop, StopStatus, loadDay, saveDay } from '../utils/storage';
+import { normalizeNumber } from '../utils/report';
 
 type UseDayOptions = {
   persist?: boolean;
@@ -91,6 +92,8 @@ function buildDay(date: string, persist: boolean): DayRecord {
   const stored = loadDay(date);
   const normalized: DayRecord = {
     date,
+    distanceKm: normalizeNumber(stored.distanceKm),
+    periodStartOdometer: normalizeNumber(stored.periodStartOdometer),
     sent: !!stored.sent,
     stops: hydrateStops(stored.stops, base.stops),
   };
