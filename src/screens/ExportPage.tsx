@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { format, parseISO } from 'date-fns';
 import * as XLSX from 'xlsx';
-import { buildRoutesReportEntries, normalizeFuelReportEntries, type FuelReportEntry, type RouteReportEntry } from '../utils/report';
+import { buildRoutesReportEntries, extractFuelReportEntries, type FuelReportEntry, type RouteReportEntry } from '../utils/report';
 import type { DayRecord } from '../utils/storage';
 
 function toYMD(d: Date) {
@@ -70,6 +70,13 @@ function extractRouteEntries(payload: any): RouteReportEntry[] {
   return buildRoutesReportEntries(extractDays(payload));
 }
 
+function formatNumber(value: number, digits = 0): string {
+  return value.toLocaleString('ru-RU', {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  });
+}
+
 type ReportData = {
   routes: RouteReportEntry[];
   fuelEntries: FuelReportEntry[];
@@ -97,7 +104,7 @@ export default function ExportPage() {
         if (cancelled) return;
         setReportData({
           routes: extractRouteEntries(data).sort((a, b) => a.date.localeCompare(b.date)),
-          fuelEntries: normalizeFuelReportEntries(data?.fuel_entries),
+          fuelEntries: extractFuelReportEntries(data),
         });
       })
       .catch((err: any) => {
@@ -135,10 +142,17 @@ export default function ExportPage() {
   const routePreview = filteredRoutes.map((row) => ({
     date: row.date,
     formattedDate: format(parseISO(row.date), 'dd.MM.yyyy'),
-    distanceLabel: row.distance_km.toLocaleString('ru-RU'),
+    distanceLabel: formatNumber(row.distance_km, Number.isInteger(row.distance_km) ? 0 : 1),
     routeLabel: row.route || '—',
     requestNumbersLabel: row.request_numbers || '—',
-    odometerLabel: row.period_start_odometer.toLocaleString('ru-RU'),
+    odometerLabel: formatNumber(row.period_start_odometer),
+  }));
+
+  const fuelPreview = filteredFuelEntries.map((row, index) => ({
+    key: `${row.fuel_date}-${index}`,
+    formattedDate: format(parseISO(row.fuel_date), 'dd.MM.yyyy'),
+    litersLabel: formatNumber(row.fuel_liters, Number.isInteger(row.fuel_liters) ? 0 : 1),
+    costLabel: formatNumber(row.fuel_cost_rub, row.fuel_cost_rub % 1 === 0 ? 0 : 2),
   }));
 
   const handleExportXLSX = () => {
@@ -260,6 +274,39 @@ export default function ExportPage() {
                     <td className="pr-3 py-1">{row.routeLabel}</td>
                     <td className="pr-3 py-1">{row.requestNumbersLabel}</td>
                     <td className="pr-3 py-1 whitespace-nowrap">{row.odometerLabel}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <div className="card overflow-hidden">
+        <div className="text-sm opacity-70 mb-2">Предпросмотр листа Отчет по ТК</div>
+
+        {loading && <div className="text-sm opacity-70">Загружаю данные с сервера…</div>}
+        {!loading && error && <div className="text-sm text-red-500">{error}</div>}
+        {!loading && !error && filteredFuelEntries.length === 0 && (
+          <div className="text-sm opacity-70">На сервере нет заправок за выбранный период.</div>
+        )}
+
+        {!loading && !error && filteredFuelEntries.length > 0 && (
+          <div className="hidden md:block overflow-x-auto -mx-2 px-2">
+            <table className="min-w-[420px] w-full text-sm">
+              <thead className="text-left opacity-70 sticky top-0 bg-black/5 dark:bg-white/5 backdrop-blur">
+                <tr>
+                  <th className="pr-3 py-1">Дата заправки</th>
+                  <th className="pr-3 py-1">Литры</th>
+                  <th className="pr-3 py-1">Сумма, руб</th>
+                </tr>
+              </thead>
+              <tbody>
+                {fuelPreview.map((row) => (
+                  <tr key={row.key} className="border-t border-black/5 dark:border-white/10 even:bg-white/5">
+                    <td className="pr-3 py-1 whitespace-nowrap">{row.formattedDate}</td>
+                    <td className="pr-3 py-1 whitespace-nowrap">{row.litersLabel}</td>
+                    <td className="pr-3 py-1 whitespace-nowrap">{row.costLabel}</td>
                   </tr>
                 ))}
               </tbody>
