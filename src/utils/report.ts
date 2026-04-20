@@ -81,6 +81,12 @@ export function normalizeFuelReportEntries(raw: unknown): FuelReportEntry[] {
     .sort((left, right) => left.fuel_date.localeCompare(right.fuel_date));
 }
 
+export function extractFuelReportEntries(payload: any): FuelReportEntry[] {
+  const direct = normalizeFuelReportEntries(payload?.fuel_entries);
+  if (direct.length > 0) return direct;
+  return normalizeFuelReportEntries(payload?.routes);
+}
+
 export function buildRoutesReportEntries(
   days: Record<string, DayRecord>,
   existingRoutes: unknown = []
